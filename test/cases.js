@@ -12,38 +12,31 @@ var rules = require('../lib/rules');
 
 describe('Code Painter', function() {
 
-	var globOptions = {sync: true};
+	glob.sync('test/cases/*').forEach(function(testCase) {
 
-	glob('test/cases/*', globOptions, function(er, testCases) {
+		testCase = testCase.substr(testCase.lastIndexOf('/') + 1);
 
-		testCases.forEach(function(testCase) {
+		describe(testCase + ' rule', function() {
+			var Rule;
+			for (var i = 0; i < rules.length; i++) {
+				if (rules[i].prototype.name === testCase) {
+					Rule = rules[i];
+					break;
+				}
+			}
 
-			testCase = testCase.substr(testCase.lastIndexOf('/') + 1);
+			glob.sync('test/cases/' + testCase + '/*/*.json').forEach(function(stylePath) {
+				var setting = {
+					folder: stylePath.substr(0, stylePath.lastIndexOf('/') + 1),
+					styles: JSON.parse(fs.readFileSync(stylePath, 'utf-8'))
+				};
 
-			describe(testCase + ' rule', function() {
-				var Rule;
-				for (var i = 0; i < rules.length; i++) {
-					if (rules[i].prototype.name === testCase) {
-						Rule = rules[i];
-						break;
-					}
+				if (editorconfig.parse(stylePath).test !== true) {
+					return;
 				}
 
-				glob('test/cases/' + testCase + '/*/*.json', globOptions, function(er2, stylePaths) {
-					stylePaths.forEach(function(stylePath) {
-						var setting = {
-							folder: stylePath.substr(0, stylePath.lastIndexOf('/') + 1),
-							styles: JSON.parse(fs.readFileSync(stylePath, 'utf-8'))
-						};
-
-						if (editorconfig.parse(stylePath).test !== true) {
-							return;
-						}
-
-						testInferrance(Rule, setting);
-						testTransformation(setting);
-					});
-				});
+				testInferrance(Rule, setting);
+				testTransformation(setting);
 			});
 		});
 	});
