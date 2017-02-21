@@ -1,0 +1,9 @@
+; We don't want EditorConfig settings to mess with test cases that are purposely formatted the way they are
+root = true
+
+[**/**]
+test = true
+
+[*.json]
+indent_style = space
+indent_size = 2

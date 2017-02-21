@@ -1,81 +1,207 @@
 #!/usr/bin/env node
-const fs = require('fs');
-const optimist = require('optimist');
-const codepainter = require('../codepainter');
 
-var argv = optimist.options({
-    'input': {
-        alias: 'i',
-        'default': 'stdin',
-        describe: 'File path to read from',
-        type: 'string'
-    },
-    'output': {
-        alias: 'o',
-        'default': 'stdout',
-        describe: 'File path to write to',
-        type: 'string'
-    },
-    'sample': {
-        alias: 's',
-        describe: 'Code sample path to infer the style from',
-        type: 'string'
-    },
-    'style': {
-        describe: 'A predefined style or a JSON string describing the coding style',
-        type: 'string'
-    },
-    'stylefile': {
-        describe: 'File containing a JSON string describing the coding style',
-        type: 'string'
-    }
-}).check(function (argv) {
-	if ( typeof argv.sample === 'undefined' && typeof argv.style === 'undefined' && typeof argv.stylefile === 'undefined' ){
-		throw new Error( 'You have to specify either a sample file or a style string or a style file.' );
+var clc = require('cli-color');
+var crypto = require('crypto');
+var editorconfig = require('editorconfig');
+var extend = require('node.extend');
+var fs = require('fs');
+var glob = require('glob');
+var path = require('path');
+var program = require('gitlike-cli');
+
+var codepaint = require('../');
+var package = require('../package');
+var Transformer = require('../lib/Transformer');
+
+
+var style = {};
+var useColor = true;
+
+function setting(val) {
+	return keyValue(val, style);
+}
+
+function keyValue(val, store) {
+	val = val.split('=');
+	store[val[0]] = parseValue(val[1]);
+	return store;
+}
+
+function parseValue(value){
+	try {
+		return JSON.parse(value);
+	} catch(e){
+		return value;
 	}
-    return true;
-})
-.usage('CodePainter beautifies JavaScript.\nUsage: $0 [options]')
-.argv;
-
-var input;
-if (argv.input === 'stdin') {
-    input = process.stdin;
-} else {
-    input = fs.createReadStream(argv.input);
-    input.pause();
-}
-input.setEncoding('utf-8');
-
-var output;
-if (argv.output === 'stdout')
-    output = process.stdout;
-else
-    output = fs.createWriteStream(argv.output);
-
-function transform(style) {
-    codepainter.transform(input, style, output);
 }
 
-try {
-	if (typeof argv.style !== 'undefined') {
-	
-		transform(argv.style);
+program.on('error', function(err){
+	console.log('');
+	console.log(clc.red('  ' + err.name + ':', err.message));
+	err.command.outputUsage();
+	err.command.outputCommands();
+	err.command.outputOptions();
+	console.log();
+	process.exit(1);
+});
 
-	} else if (typeof argv.stylefile !== 'undefined') {
+program
 
-		transform(fs.readFileSync (argv.stylefile));
+	.version(package.version)
+	.description('Code Painter beautifies JavaScript.')
 
+	.command('infer <globs>...')
+		.description('Infer formatting style from file(s)')
+		.action(infer)
+		.option('-d, --details',        'give a detailed report with trend scores')
+		.option('--ini',                'use ini file format')
+		.on('help', function(cmd){
+			cmd.outputIndented('Examples', [
+				'$ ' + clc.cyan('codepaint infer "**/*.js"'),
+				'$ codepaint infer ' + clc.cyan('"**/*view.js" "**/*model.js"'),
+				'$ codepaint infer ' + clc.cyan('-d') + ' "**/*.js"',
+				'$ codepaint infer ' + clc.cyan('--ini') + ' "**/*.js"',
+			]);
+		}).parent
+
+	.command('xform <globs>...')
+		.description('Transform file(s) to specified formatting style')
+		.action(xform)
+		.option('-i, --infer <glob>',           'code sample(s) to infer')
+		.option('-p, --predef <name>',          'cascade predefined style (e.g., idiomatic)')
+		.option('-j, --json <path>',            'cascade JSON style over predef style')
+		.option('-s, --style <key>=<value>',    'cascade explicit style over JSON', setting)
+		.option('-e, --editor-config',          'cascade EditorConfig style over all others')
+		.option('-o, --output <path>',          'output a single transformation to one file')
+		.on('help', function(cmd){
+			cmd.outputIndented('Examples', [
+				'$ ' + clc.cyan('codepaint xform "**/*.js"'),
+				'$ codepaint xform ' + clc.cyan('"**/*view.js" "**/*model.js"'),
+				'$ codepaint xform %s "**/*.js" ' + clc.cyan('-i sample.js'),
+				'$ codepaint xform %s "**/*.js" ' + clc.cyan('-p idiomatic'),
+				'$ codepaint xform %s "**/*.js" ' + clc.cyan('-j custom.json'),
+				'$ codepaint xform %s "**/*.js" ' + clc.cyan('-s quote_type=null'),
+				'$ codepaint xform %s "**/*.js" ' + clc.cyan('-s indent_style=space -s indent_size=4'),
+				'$ codepaint xform %s "**/*.js" ' + clc.cyan('-e')
+			]);
+		}).parent
+
+	.parse(process.argv);
+
+
+function infer(args, options) {
+	codepaint.infer(args.globs, options, function(style) {
+		if (options.ini) {
+			console.log('[*.js]');
+			Object.keys(style).forEach(function(key) {
+				console.log(key, '=', style[key] + ';');
+			});
+		} else {
+			console.log(JSON.stringify(style));
+		}
+	});
+}
+
+function xform(args, options) {
+
+	style = {};
+
+	var transformer = new Transformer();
+	var errors = [];
+	var showReport = args.globs[0] !== process.stdin;
+	args.globs = args.globs.filter(function (ele) { return typeof ele === 'string' });
+
+	if (showReport) {
+
+		transformer.on('cascade', cascade);
+
+		transformer.on('transform', function(transformed, path){
+			writeDot('.');
+		});
+
+		var errorDot = useColor ? clc.red('.') : '.';
+		transformer.on('error', function(err, inputPath){
+			err.inputPath = inputPath;
+			errors.push(err);
+			writeDot(errorDot);
+		});
+	}
+
+	transformer.on('end', function(err, transformed, skipped, errored){
+		if (errors.length && showReport) {
+			console.log();
+		}
+		errors.forEach(function(err2){
+			error(err2.message + ': ' + err2.inputPath);
+		});
+		if (showReport) {
+			displayFinalMessage(transformed, skipped, errored);
+		}
+		if (err) process.exit(1);
+	});
+
+	transformer.transform(args.globs, options);
+}
+
+function cascade(styleBefore, styleToMerge, styleType){
+	if (Object.keys(styleToMerge).length === 0){
+		return;
+	}
+	console.log();
+	console.log('  ' + styleType + ':');
+	var color;
+	Object.keys(styleToMerge).forEach(function(key){
+		var msg = key + ' = ' + styleToMerge[key];
+		if (key in style) {
+			if (style[key] === styleToMerge[key]){
+				msg = '= ' + msg;
+				color = clc.blackBright;
+			} else if (styleToMerge[key] === null){
+				msg = '   x ' + msg;
+				delete style[key];
+				console.log(useColor ? clc.red(msg) : msg);
+				return;
+			} else {
+				msg = '* ' + msg;
+				color = clc.cyan;
+			}
+		} else {
+			msg = '+ ' + msg;
+			color = clc.green;
+		}
+		console.log('   ' + (useColor ? color(msg) : msg));
+	});
+	process.stdout.write('\n  ');
+}
+
+var dotCount = 0;
+function writeDot(dot) {
+	if ( ++dotCount%70 === 0 ) {
+		process.stdout.write('\n  ');
+	}
+	process.stdout.write(dot);
+}
+
+function error(msg){
+	msg = 'Error: ' + msg;
+	if (useColor) {
+		msg = clc.red(msg);
+	}
+	msg = '\n  ' + msg;
+	if (typeof arguments[1] !== 'undefined') {
+		console.log(msg, arguments[1]);
 	} else {
-		var sample;
-		sample = fs.createReadStream(argv.sample);
-		sample.pause();
-		sample.setEncoding('utf-8');
-    
-		codepainter.infer(sample, transform);
+		console.log(msg);
 	}
-} catch (e) {
-	console.error( 'Error: ' + e.message );
-	optimist.showHelp( console.error );
 }
 
+function displayFinalMessage(transformed, skipped, errored) {
+	console.log();
+	console.log();
+	var msg = '  REPORT: %s transformed. %s errored. %s skipped (no rules).';
+	if (useColor) {
+		msg = clc.magenta(msg);
+	}
+	console.log(msg, transformed, errored, skipped);
+	console.log();
+}

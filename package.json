@@ -1,34 +1,49 @@
 {
-	"bin": {
-		"codepaint": "./bin/codepaint"
-	},
-    "dependencies": {
-        "esprima": "*",
-        "mocha": "*",
-        "optimist": "*",
-        "should": "*"
-    },
-    "description": "A JavaScript beautifier that can infer coding style from a sample",
-    "name": "codepainter", 
-    "main": "./codepainter",
-    "licenses": [
-    	{
-    		"type": "MIT",
-    		"url": "http://github.com/fawek/codepainter/raw/master/LICENSE"
-    	}
-    ],
-    "maintainers": [
-    	{
-    		"name": "Jakub Wieczorek",
-    		"email": "jakubw@jakubw.net",
-    		"web": "http://jakubw.net"
-    	}
-    ],
-    "repositories": [
-    	{
-    		"type": "git",
-    		"url": "http://github.com/fawek/codepainter.git"
-    	}
-    ],
-    "version": "0.0.1"
+  "name": "codepainter",
+  "version": "0.4.5",
+  "author": "Jakub Wieczorek <jakubw@jakubw.net>",
+  "description": "A JavaScript beautifier that can both infer coding style and transform code to reflect that style. You can also set style preferences explicitly in a variety of ways.",
+  "contributors": [
+    "Jed Mao <jed.hunsaker[at]gmail.com>",
+    "Jakub Wieczorek <jakubw@jakubw.net> (http://jakubw.net)"
+  ],
+  "main": "./codepainter",
+  "bin": {
+    "codepaint": "./bin/codepaint",
+    "codepainter": "./bin/codepaint"
+  },
+  "scripts": {
+    "test": "mocha -R spec",
+    "codepaint": "codepaint xform -e **/**.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/jedmao/codepainter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jedmao/codepainter/issues"
+  },
+  "keywords": [
+    "code",
+    "formatting",
+    "style",
+    "editorconfig"
+  ],
+  "dependencies": {
+    "async": "^2.0.0-rc.5",
+    "cli-color": "^1.1.0",
+    "editorconfig": "^0.13.2",
+    "esprima": "^2.7.2",
+    "gitlike-cli": "^0.1.0",
+    "glob": "^7.0.3",
+    "memorystream": "^0.3.1",
+    "mkdirp": "^0.5.1",
+    "node.extend": "^1.1.5"
+  },
+  "devDependencies": {
+    "mocha": "^2.5.3",
+    "should": "^8.4.0"
+  },
+  "engine": "node >= 0.10.6",
+  "license": "MIT"
 }

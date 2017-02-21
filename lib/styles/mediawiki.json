@@ -1,12 +1,9 @@
 {
-	"Indentation": {
-		"character":"\t", 
-		"width":1
-	},
-	"SpacesAroundOperators"       :"present",
-	"SpaceAfterControlStatements" :"present",
-	"SpaceAfterAnonymousFunctions":"present",
-	"LastEmptyLine"               :"present",
-	"TrailingWhitespaces"         :"strip",
-	"SpacesInParens"              :"present"
+  "indent_style": "tab",
+  "trim_trailing_whitespace": true,
+  "insert_final_newline": true,
+  "spaces_around_operators": true,
+  "space_after_control_statements": true,
+  "space_after_anonymous_functions": true,
+  "spaces_in_brackets": true
 }

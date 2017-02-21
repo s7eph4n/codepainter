@@ -1,74 +1,89 @@
-const assert = require('assert'),
-	  fs = require('fs'),
-	  path = require('path');
-const should = require('should');
-const codepainter = require('../codepainter');
-const casesRoot = path.join(__dirname, 'cases');
+var editorconfig = require('editorconfig');
+var fs = require('fs');
+var glob = require('glob');
+var MemoryStream = require('memorystream');
+var path = require('path');
+var should = require('should');
 
-var testCases = [
-	'quotes'
-];
+var Pipe = require('../lib/Pipe');
+var codepaint = require('../codepainter');
+var rules = require('../lib/rules');
 
-function infer(samplePath, callback) {
-	var sampleStream = fs.createReadStream(samplePath);
-	sampleStream.pause();
-	sampleStream.setEncoding('utf-8');
-	codepainter.infer(sampleStream, function (error, style) {
-		callback(style);
-	});
-}
 
-function transform(inputPath, style, outputPath, callback) {
-	var inputStream = fs.createReadStream(inputPath);
-	inputStream.pause();
-	inputStream.setEncoding('utf-8');
+describe('Code Painter', function() {
 
-	var outputStream = fs.createWriteStream(outputPath);
-    codepainter.transform(inputStream, style, outputStream, function (error) {
-    	outputStream.on('close', callback);
-    	outputStream.end();
-    });
-}
+	glob.sync('test/cases/*').forEach(function(testCase) {
 
-describe('Code Painter', function () {
-	testCases.forEach(function (testCase) {
-		var inputPath = path.join(casesRoot, testCase + '.input.js'),
-			outputPath = path.join(casesRoot, testCase + '.output.js'),
-			tmpPath = path.join(casesRoot, testCase + '.tmp.js');
-			samplePath = path.join(casesRoot, testCase + '.sample.json'),
-			stylePath = path.join(casesRoot, testCase + '.style.json');
+		testCase = testCase.substr(testCase.lastIndexOf('/') + 1);
 
-		it('should properly format ' + testCase, function (done) {
-			if (path.existsSync(samplePath)) {
-				infer(samplePath, function (style) {
-					if (path.existsSync(inputPath)) {
-						path.existsSync(outputPath).should.be.true;
-						var expected = fs.readFileSync(outputPath, 'utf-8');
-						transform(inputPath, style, tmpPath, function () {
-							var output = fs.readFileSync(tmpPath, 'utf-8');
-							output.should.equal(expected);
-							done();
-						});
-					} else {
-						path.existsSync(stylePath).should.be.true;
-						var expected = JSON.parse(fs.readFileSync(stylePath, 'utf-8'));
-						style.should.equal(expected);
-						done();
-					}
-				});
-			} else {
-				path.existsSync(inputPath).should.be.true;
-				path.existsSync(stylePath).should.be.true;
-				path.existsSync(outputPath).should.be.true;
-
-				var expected = fs.readFileSync(outputPath, 'utf-8');
-				var style = JSON.parse(fs.readFileSync(stylePath, 'utf-8'));
-				transform(inputPath, style, tmpPath, function () {
-					var output = fs.readFileSync(tmpPath, 'utf-8');
-					output.should.equal(expected);
-					done();
-				});
+		describe(testCase + ' rule', function() {
+			var Rule;
+			for (var i = 0; i < rules.length; i++) {
+				if (rules[i].prototype.name === testCase) {
+					Rule = rules[i];
+					break;
+				}
 			}
+
+			glob.sync('test/cases/' + testCase + '/*/*.json').forEach(function(stylePath) {
+				var setting = {
+					folder: stylePath.substr(0, stylePath.lastIndexOf('/') + 1),
+					styles: JSON.parse(fs.readFileSync(stylePath, 'utf-8'))
+				};
+
+				if (editorconfig.parse(stylePath).test !== true) {
+					return;
+				}
+
+				testInferrance(Rule, setting);
+				testTransformation(setting);
+			});
 		});
 	});
 });
+
+function testInferrance(Rule, setting) {
+	Object.keys(setting.styles).forEach(function(styleKey) {
+		var styleValue = setting.styles[styleKey];
+		var samplePath = verifyPath(setting.folder + 'sample.js');
+		if (fs.existsSync(samplePath)) {
+			it('infers ' + styleKey + ' setting as ' + styleValue, function(done) {
+				codepaint.infer(samplePath, function(inferredStyle) {
+					styleValue.should.equal(inferredStyle[styleKey]);
+					done();
+				}, Rule);
+			});
+		}
+	});
+}
+
+function verifyPath(path) {
+	fs.existsSync(path).should.be.true;
+	return path;
+}
+
+function testTransformation(setting) {
+	var folders = setting.folder.split('/');
+	setting.name = folders[folders.length - 2];
+	it('formats ' + setting.name + ' setting properly', function(done) {
+		var inputPath = setting.folder + 'input.js';
+		var expectedPath = verifyPath(setting.folder + 'expected.js');
+
+		var outputStream = new MemoryStream();
+		var output = '';
+		outputStream.on('data', function(chunk) {
+			output += chunk;
+		});
+
+		var options = {
+			style: setting.styles,
+			output: outputStream
+		};
+
+		codepaint.xform(inputPath, options, function() {
+			var expected = fs.readFileSync(expectedPath, 'utf8');
+			output.should.equal(expected);
+			done();
+		});
+	});
+}
